@@ -1,6 +1,7 @@
 /**
  * Execution Engine for Preview
  * Calculates indicator values from IR and OHLCV data
+ * This is the "source of truth" for preview fidelity
  */
 
 import type { IrGraph, IrNode, IrValue } from '@indiforge/shared';
@@ -21,8 +22,10 @@ export interface OHLCV {
  * Execution result with computed values per bar
  */
 export interface ExecutionResult {
-  indicators: Record<string, number[]>;
+  // Each output maps to specific calculated values
   plots: Record<string, number[]>;
+  // Intermediate values for debugging
+  indicators: Record<string, number[]>;
   errors: string[];
 }
 
@@ -41,34 +44,71 @@ export function executeIr(ir: IrGraph, ohlcvData: OHLCV[]): ExecutionResult {
   };
 
   // Create a map of node IDs to their computed values
+  // Also map by "type.operation" for dependency resolution
   const nodeValues: Record<string, number[]> = {};
 
-  // Process nodes in order
+  // Process nodes in topological order
   const sortedNodes = sortNodesByDependencies(ir.nodes);
 
+  // Step 1: Compute all node values
   for (const node of sortedNodes) {
     try {
       const values = computeNode(node, nodeValues, ohlcvData);
       nodeValues[node.id] = values;
       
-      // Store by operation name for easy access
-      nodeValues[`${node.type}.${node.operation}`] = values;
+      // Store by operation for easier access
+      const opKey = `${node.type}.${node.operation}`;
+      nodeValues[opKey] = values;
     } catch (e) {
       result.errors.push(`Error computing ${node.type}.${node.operation}: ${e}`);
       nodeValues[node.id] = new Array(ohlcvData.length).fill(0);
     }
   }
 
-  // Extract plot outputs
+  // Step 2: Map outputs to their source nodes explicitly
+  // Each output in the IR should reference a specific node that produces it
   for (const output of ir.outputs) {
-    // Try to find the node that produces this output
-    const lastNode = sortedNodes[sortedNodes.length - 1];
-    if (lastNode) {
-      result.plots[output.name] = nodeValues[lastNode.id] || new Array(ohlcvData.length).fill(0);
+    // Find the node that should produce this output
+    // In a proper IR, outputs would have a sourceNodeId
+    // For now, we use heuristics based on output name
+    const sourceKey = findOutputSource(output.name, sortedNodes);
+    
+    if (sourceKey && nodeValues[sourceKey]) {
+      result.plots[output.name] = nodeValues[sourceKey];
+    } else {
+      // Fallback: use last node if no explicit mapping
+      const lastNode = sortedNodes[sortedNodes.length - 1];
+      if (lastNode) {
+        result.plots[output.name] = nodeValues[lastNode.id] || new Array(ohlcvData.length).fill(0);
+      }
     }
   }
 
+  // If no explicit outputs defined, create a default one from the last indicator
+  if (Object.keys(result.plots).length === 0 && sortedNodes.length > 0) {
+    const lastNode = sortedNodes[sortedNodes.length - 1];
+    const lastKey = `${lastNode.type}.${lastNode.operation}`;
+    result.plots['main'] = nodeValues[lastKey] || nodeValues[lastNode.id];
+  }
+
   return result;
+}
+
+/**
+ * Find which node produces a given output by name
+ */
+function findOutputSource(outputName: string, nodes: IrNode[]): string | null {
+  // Simple heuristic: look for node with matching operation name
+  const name = outputName.toLowerCase();
+  
+  for (const node of nodes) {
+    if (node.operation.toLowerCase().includes(name)) {
+      return node.id;
+    }
+  }
+  
+  // Default: return last node
+  return nodes.length > 0 ? nodes[nodes.length - 1].id : null;
 }
 
 /**
@@ -494,14 +534,28 @@ function computeCondition(node: IrNode, nodeValues: Record<string, number[]>): n
 
 /**
  * Resolve input to array of values
+ * Handles both node references and constants
  */
 function resolveInput(input: IrValue, nodeValues: Record<string, number[]>): number[] | null {
   if (input.type === 'node') {
     return nodeValues[input.nodeId] || null;
   }
   if (input.type === 'constant') {
-    const val = input.value as number;
-    return null; // Constants need to be handled differently
+    // Create an array of the constant value repeated for each bar
+    const val = input.value;
+    if (typeof val === 'number') {
+      // For numeric constants, we need the length - we'll get it from nodeValues
+      // Find any existing array to get length
+      const firstArray = Object.values(nodeValues)[0];
+      const length = firstArray?.length || 100;
+      return new Array(length).fill(val);
+    }
+    if (typeof val === 'boolean') {
+      const firstArray = Object.values(nodeValues)[0];
+      const length = firstArray?.length || 100;
+      return new Array(length).fill(val ? 1 : 0);
+    }
+    return null;
   }
   return null;
 }

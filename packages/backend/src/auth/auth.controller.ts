@@ -11,16 +11,32 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Register new user' })
+  @ApiOperation({ summary: 'Register new user with email/password' })
   async register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
+    if (!dto.password) {
+      throw new Error('Password is required');
+    }
     return this.authService.register(dto.email, dto.password);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login user' })
+  @ApiOperation({ summary: 'Login with email/password' })
   async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
-    return this.authService.login(dto.email);
+    if (!dto.password) {
+      throw new Error('Password is required');
+    }
+    return this.authService.login(dto.email, dto.password);
+  }
+
+  @Post('magic-link')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Magic link login (auto-creates user if needed)' })
+  async magicLink(@Body() body: { email: string }): Promise<{ message: string }> {
+    // In a real app, this would send an email with a magic link
+    // For demo, just return success
+    await this.authService.magicLinkLogin(body.email);
+    return { message: 'Magic link sent (demo mode: auto-logged in)' };
   }
 
   @Get('me')
