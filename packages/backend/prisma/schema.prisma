@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= User & Auth =============
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  displayName   String
+  authProvider  AuthProvider
+  role          UserRole  @default(USER)
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  lastLoginAt   DateTime  @default(now())
+  
+  // Relations
+  projects          Project[]
+  subscriptions     Subscription[]
+  templates         Template[]
+  auditLogs         AuditLog[]
+  indicatorVersions IndicatorVersion[]
+  sharedAssets      SharedAsset[]
+  
+  @@map("users")
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model Subscription {
+  id                  String   @id @default(cuid())
+  userId              String
+  provider            SubscriptionProvider
+  planCode            SubscriptionPlan
+  status              SubscriptionStatus
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  quotaJson           String   @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("subscriptions")
+}
+
+enum SubscriptionProvider {
+  STRIPE
+  PADDLE
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PRO
+  TEAM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+// ============= Projects & Indicators =============
+
+model Project {
+  id              String    @id @default(cuid())
+  ownerId         String
+  name            String
+  slug            String    @unique
+  visibility      Visibility @default(PRIVATE)
+  status          ProjectStatus @default(DRAFT)
+  currentVersionId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  owner                User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  indicatorDefinition IndicatorDefinition?
+  sharedAssets         SharedAsset[]
+  
+  @@map("projects")
+}
+
+enum Visibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
+enum ProjectStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model IndicatorDefinition {
+  id                  String   @id @default(cuid())
+  projectId           String   @unique
+  title               String
+  description         String   @default("")
+  category            IndicatorCategory @default(CUSTOM)
+  displayType         DisplayType @default(OVERLAY)
+  selectedPlatforms   String[] @default(["pinescript_v5"])
+  currentDraftGraphJson String   @default("{}")
+  latestSemanticHash  String   @default("")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Relations
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions      IndicatorVersion[]
+  
+  @@map("indicator_definitions")
+}
+
+enum IndicatorCategory {
+  TREND
+  MOMENTUM
+  VOLATILITY
+  BREAKOUT
+  MEAN_REVERSION
+  VOLUME
+  CUSTOM
+}
+
+enum DisplayType {
+  OVERLAY
+  SEPARATE_PANE
+}
+
+model IndicatorVersion {
+  id                   String   @id @default(cuid())
+  indicatorDefinitionId String
+  versionNumber        Int
+  visualGraphJson      String   @default("{}")
+  canonicalIrJson      String   @default("{}")
+  validationReportJson String   @default("{}")
+  generatorVersion     String   @default("1.0.0")
+  createdBy            String
+  changeNote           String   @default("")
+  createdAt            DateTime @default(now())
+  
+  // Relations
+  indicatorDefinition IndicatorDefinition @relation(fields: [indicatorDefinitionId], references: [id], onDelete: Cascade)
+  creator             User                @relation(fields: [createdBy], references: [id])
+  exports             ExportJob[]
+  
+  @@unique([indicatorDefinitionId, versionNumber])
+  @@map("indicator_versions")
+}
+
+// ============= Exports =============
+
+model ExportJob {
+  id            String     @id @default(cuid())
+  versionId     String
+  targetPlatform ExportPlatform
+  targetVersion String     @default("v5")
+  status        ExportStatus @default(PENDING)
+  warningsJson  String     @default("[]")
+  artifactKey   String?
+  checksum      String?
+  requestedAt   DateTime   @default(now())
+  completedAt   DateTime?
+  
+  // Relations
+  version IndicatorVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  
+  @@map("export_jobs")
+}
+
+enum ExportPlatform {
+  PINESCRIPT_V5
+  MQL5
+  MQL4
+  NINJATRADER_8
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============= Templates =============
+
+model Template {
+  id              String        @id @default(cuid())
+  createdBy       String
+  sourceVersionId String?
+  scope           TemplateScope @default(OFFICIAL)
+  title           String
+  description     String        @default("")
+  tags            String[]      @default([])
+  isFeatured      Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  
+  // Relations
+  creator       User            @relation(fields: [createdBy], references: [id])
+  sourceVersion IndicatorVersion? @relation(fields: [sourceVersionId], references: [id])
+  
+  @@map("templates")
+}
+
+enum TemplateScope {
+  PERSONAL
+  OFFICIAL
+  COMMUNITY
+}
+
+// ============= Sharing =============
+
+model SharedAsset {
+  id          String     @id @default(cuid())
+  assetType   AssetType
+  assetId     String
+  ownerId     String
+  shareMode   ShareMode  @default(VIEW)
+  shareToken  String     @unique @default(cuid())
+  allowClone  Boolean    @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime   @default(now())
+  
+  // Relations
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [assetId], references: [id])
+  
+  @@unique([assetType, assetId])
+  @@map("shared_assets")
+}
+
+enum AssetType {
+  PROJECT
+  TEMPLATE
+}
+
+enum ShareMode {
+  VIEW
+  CLONE
+  EDIT
+}
+
+// ============= Audit =============
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  actorUserId   String
+  action        String
+  entityType    String
+  entityId      String
+  metadataJson  String   @default("{}")
+  ipHash        String   @default("")
+  createdAt     DateTime @default(now())
+  
+  // Relations
+  actor User @relation(fields: [actorUserId], references: [id])
+  
+  @@map("audit_logs")
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+}

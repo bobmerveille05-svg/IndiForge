@@ -1,0 +1,28 @@
+{
+  "name": "@indiforge/core",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ir": "./src/ir/index.ts",
+    "./compiler": "./src/compiler/index.ts",
+    "./validator": "./src/validator/index.ts",
+    "./generators/*": "./src/generators/*.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@indiforge/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
