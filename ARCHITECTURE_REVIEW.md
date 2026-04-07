@@ -1,4 +1,5 @@
-# Analyse Stratégique IndiForge — Rapport CTO
+# Analyse Stratégique IndiForge — Rapport CTO v2
+## Post-Review: Corrections & Plan d'Exécution Verrouillé
 
 ---
 
@@ -502,3 +503,96 @@ Le pari technique (IR canonique) est le bon. L'exécution est incomplète mais l
 - On ne tente pas de faire "tout supporter" d'emblée
 
 **Recommandation** : Procéder au développement en prioritant les chantiers 1-8 du backlog. L'architecture globale est bonne — il faut maintenant deliver le fonctionnel.
+
+---
+
+# Annexe : Plan d'Exécution Verrouillé
+
+## Les 5 Décisions à Prendre Maintenant
+
+| # | Décision | Recommandation | Justification |
+|---|----------|----------------|---------------|
+| 1 | **MVP Pine only + MQL5 labo** | Pine Script uniquement en public, MQL5 en proof-of-concept interne | Réduit le scope commercial tout en validant l'architecture multiplateforme |
+| 2 | **Source de vérité : Visual Graph** | Le graphe visuel est la référence utilisateur, l'IR est la référence d'exécution | L'utilisateur voit et modifie le graphe, pas l'IR |
+| 3 | **Validation sémantique séparée** | Créer un module `semantic-validator` distinct du convertisseur | Pare-feu entre édition et exécution |
+| 4 | **Auth pragmatique rapide** | Clerk (ou NextAuth) avec minimum de providers | Temps équipe sur le core, pas l'auth |
+| 5 | **Dataset embarqué d'abord** | 3 datasets OHLCV intégrés, CSV import en V2 | Pas de dépendance externe pour la démo |
+
+## Critère de Succès (2 semaines)
+
+> **Démo prouvable** : Close → SMA(20) → Plot Line avec preview et export Pine cohérents
+
+Cet exemple doit fonctionner sans triche :
+- L'utilisateur voit la courbe sur le chart
+- L'export produit un fichier .pine qui compile dans TradingView
+- Les valeurs numériques sont identiques
+
+## Les 3 Moteurs Isolation
+
+| Moteur | Responsabilité | Dépendances |
+|--------|---------------|-------------|
+| **Editor Semantics** | Valider le graphe avant conversion (cycles, types, outputs) | Node registry |
+| **Compiler Core** | Visual Graph → IR canonique | Editor Semantics |
+| **Execution Engine** | Exécuter l'IR pour le preview | Compiler Core |
+| **Code Generators** | IR → Pine/MQL/Ninja | Compiler Core |
+
+## MVP Brutal Simplifié
+
+### In (à deliver)
+- Auth email + magic link
+- Dataset OHLCV demo (EUR/USD 1000 barres)
+- Editor: 3 nœuds (close, SMA, plot)
+- Preview: courbe visible sur Lightweight Charts
+- Export: fichier .pine download
+- Save: projet en base
+
+### Out (explicitement)
+- MQL5 export
+- RSI, MACD, Bollinger (garder dans l'IR, pas dans l'UI)
+- CSV import
+- Templates library
+- Billing
+- Versioning avancé
+
+### Architecture-Ready (préparé mais pas deliver)
+- Schéma Prisma complet
+- IR avec support MACD/Bollinger
+- Points d'extension pour MQL5
+
+## Matrice de Compatibilité UX
+
+Chaque primitive doit afficher son statut dans l'UI :
+
+| Statut | Signification | UX |
+|--------|---------------|---|
+| 🟢 Portable | Identique sur toutes les plateformes | "Supported everywhere" |
+| 🟡 Approximé | Comportement potentiellement différent | Warning visible |
+| 🔴 Non supporté | Non exportable vers la cible | Bloquant ou warn |
+
+## Prochaine Action Immédiate
+
+Transformer ce rapport en board Linear/Trello avec :
+
+1. **Epic: Core Semantics**
+   - Tâche: Convertisseur Visual→IR minimal
+   - Tâche: Validation sémantique (cycles, types)
+   - Tâche: Editor node registry
+
+2. **Epic: Preview Fidelity**
+   - Tâche: Web Worker calculateur
+   - Tâche: Intégration Lightweight Charts
+   - Tâche: Dataset demo
+
+3. **Epic: Pine Export**
+   - Tâche: Générateur SMA complet
+   - Tâche: Générateur EMA complet
+   - Tâche: Download + manifest
+
+4. **Epic: Foundation**
+   - Tâche: Auth complet
+   - Tâche: CRUD Projects
+   - Tâche: Save/Load Graph
+
+---
+
+*Document vivant - mis à jour après la post-review*
