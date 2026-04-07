@@ -1,6 +1,7 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../common/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -34,7 +35,7 @@ export class AuthService {
     });
 
     if (!user) {
-      // Create user on first login
+      // Create user on first login (magic link flow)
       user = await this.prisma.user.create({
         data: {
           email,
@@ -74,14 +75,20 @@ export class AuthService {
     });
 
     if (existing) {
-      throw new UnauthorizedException('Email already registered');
+      throw new ConflictException('Email already registered');
+    }
+
+    // Hash password if provided
+    let hashedPassword: string | undefined;
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10);
     }
 
     const user = await this.prisma.user.create({
       data: {
         email,
         displayName: email.split('@')[0],
-        authProvider: 'EMAIL',
+        authProvider: password ? 'EMAIL' : 'EMAIL',
       },
     });
 
@@ -95,6 +102,23 @@ export class AuthService {
         role: user.role,
       },
       ...token,
+    };
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
     };
   }
 }
